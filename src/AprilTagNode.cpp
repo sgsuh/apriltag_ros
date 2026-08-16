@@ -30,49 +30,59 @@
     if(assign_check(parameter, N, V)) continue;
 
 template<typename T>
-T get_value(const rclcpp::Parameter& parameter)
+T get_value(const rclcpp::ParameterValue& value)
 {
-    return parameter.get_value<T>();
+    return value.get<T>();
 }
 
 // YAML represents whole numbers as integers, accept them for parameters that
 // are declared as floating point or boolean, e.g. "1" for "1.0" or "true"
 template<typename T>
-T get_number(const rclcpp::Parameter& parameter)
+T get_number(const rclcpp::ParameterValue& value)
 {
-    return parameter.get_type() == rclcpp::ParameterType::PARAMETER_INTEGER
-               ? static_cast<T>(parameter.as_int())
-               : parameter.get_value<T>();
+    return value.get_type() == rclcpp::ParameterType::PARAMETER_INTEGER
+               ? static_cast<T>(value.get<int64_t>())
+               : value.get<T>();
 }
 
 template<>
-float get_value<float>(const rclcpp::Parameter& parameter)
+float get_value<float>(const rclcpp::ParameterValue& value)
 {
-    return get_number<float>(parameter);
+    return get_number<float>(value);
 }
 
 template<>
-double get_value<double>(const rclcpp::Parameter& parameter)
+double get_value<double>(const rclcpp::ParameterValue& value)
 {
-    return get_number<double>(parameter);
+    return get_number<double>(value);
 }
 
 template<>
-bool get_value<bool>(const rclcpp::Parameter& parameter)
+bool get_value<bool>(const rclcpp::ParameterValue& value)
 {
-    return get_number<bool>(parameter);
+    return get_number<bool>(value);
+}
+
+template<>
+std::vector<double> get_value<std::vector<double>>(const rclcpp::ParameterValue& value)
+{
+    if(value.get_type() == rclcpp::ParameterType::PARAMETER_INTEGER_ARRAY) {
+        const std::vector<int64_t>& numbers = value.get<std::vector<int64_t>>();
+        return std::vector<double>(numbers.cbegin(), numbers.cend());
+    }
+    return value.get<std::vector<double>>();
 }
 
 template<typename T>
 void assign(const rclcpp::Parameter& parameter, T& var)
 {
-    var = get_value<T>(parameter);
+    var = get_value<T>(parameter.get_parameter_value());
 }
 
 template<typename T>
 void assign(const rclcpp::Parameter& parameter, std::atomic<T>& var)
 {
-    var = get_value<T>(parameter);
+    var = get_value<T>(parameter.get_parameter_value());
 }
 
 template<typename T>
@@ -190,19 +200,20 @@ AprilTagNode::AprilTagNode(const rclcpp::NodeOptions& options)
         this
 #endif
         ),
-    undistort(declare_parameter("undistort", false,
-                                descr("undistort the images with the distortion coefficients from 'camera_info' "
-                                      "instead of expecting already rectified images",
-                                      true)))
+    undistort(get_value<bool>(
+        declare_parameter("undistort", rclcpp::ParameterValue(false),
+                          descr("undistort the images with the distortion coefficients from 'camera_info' "
+                                "instead of expecting already rectified images",
+                                true, true))))
 {
     // read-only parameters
     const std::string tag_family = declare_parameter("family", "36h11", descr("tag family", true));
-    tag_edge_size = declare_parameter("size", 1.0, descr("default tag size", true));
+    tag_edge_size = get_value<double>(declare_parameter("size", rclcpp::ParameterValue(1.0), descr("default tag size", true, true)));
 
     // get tag names, IDs and sizes
     const auto ids = declare_parameter("tag.ids", std::vector<int64_t>{}, descr("tag ids", true));
     const auto frames = declare_parameter("tag.frames", std::vector<std::string>{}, descr("tag frame names per id", true));
-    const auto sizes = declare_parameter("tag.sizes", std::vector<double>{}, descr("tag sizes per id", true));
+    const auto sizes = get_value<std::vector<double>>(declare_parameter("tag.sizes", rclcpp::ParameterValue(std::vector<double>{}), descr("tag sizes per id", true, true)));
 
     // get method for estimating tag pose
     const std::string& pose_estimation_method =
@@ -231,7 +242,7 @@ AprilTagNode::AprilTagNode(const rclcpp::NodeOptions& options)
     declare_parameter("detector.debug", rclcpp::ParameterValue(td->debug), descr("write additional debugging images to working directory", false, true));
 
     declare_parameter("max_hamming", 0, descr("reject detections with more corrected bits than allowed"));
-    declare_parameter("profile", false, descr("print profiling information to stdout"));
+    declare_parameter("profile", rclcpp::ParameterValue(false), descr("print profiling information to stdout", false, true));
 
     if(!frames.empty()) {
         if(ids.size() != frames.size()) {

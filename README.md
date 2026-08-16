@@ -61,7 +61,9 @@ Instead of publishing all tag poses, the list `tag.ids` can be used to only publ
 
 The node expects rectified images. The recommended way to rectify the raw images of a camera is to run an `image_proc::RectifyNode` in front of the node, ideally composed into the same container as shown in [camera_36h11.launch.yml](launch/camera_36h11.launch.yml). If this is not possible, `undistort` (bool) makes the node undistort the images itself, using the distortion coefficients `D` from `CameraInfo` and the projection matrix `P` as the intrinsics of the undistorted image. The undistortion maps are only computed when the calibration changes. Only the `plumb_bob` and `rational_polynomial` distortion models are supported; images with any other distortion model are passed to the detector unchanged.
 
-The remaining parameters are set to the their default values from the library. See `apriltag.h` for a more detailed description of their function. The parameters in the `detector` namespace additionally accept the integer representation of their value, e.g. `decimate: 2` for `2.0` and `refine: 1` for `true`.
+Parameters that expect a floating point number or a boolean additionally accept the integer representation of their value, since YAML reads whole numbers as integers, e.g. `size: 1` for `1.0`, `sizes: [1, 2]` for `[1.0, 2.0]`, `decimate: 2` for `2.0` and `refine: 1` for `true`.
+
+The remaining parameters are set to the their default values from the library. See `apriltag.h` for a more detailed description of their function.
 
 See [tags_36h11.yaml](cfg/tags_36h11.yaml) for an example configuration that publishes specific tag poses of the 36h11 family.
 
