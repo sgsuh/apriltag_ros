@@ -30,15 +30,49 @@
     if(assign_check(parameter, N, V)) continue;
 
 template<typename T>
+T get_value(const rclcpp::Parameter& parameter)
+{
+    return parameter.get_value<T>();
+}
+
+// YAML represents whole numbers as integers, accept them for parameters that
+// are declared as floating point or boolean, e.g. "1" for "1.0" or "true"
+template<typename T>
+T get_number(const rclcpp::Parameter& parameter)
+{
+    return parameter.get_type() == rclcpp::ParameterType::PARAMETER_INTEGER
+               ? static_cast<T>(parameter.as_int())
+               : parameter.get_value<T>();
+}
+
+template<>
+float get_value<float>(const rclcpp::Parameter& parameter)
+{
+    return get_number<float>(parameter);
+}
+
+template<>
+double get_value<double>(const rclcpp::Parameter& parameter)
+{
+    return get_number<double>(parameter);
+}
+
+template<>
+bool get_value<bool>(const rclcpp::Parameter& parameter)
+{
+    return get_number<bool>(parameter);
+}
+
+template<typename T>
 void assign(const rclcpp::Parameter& parameter, T& var)
 {
-    var = parameter.get_value<T>();
+    var = get_value<T>(parameter);
 }
 
 template<typename T>
 void assign(const rclcpp::Parameter& parameter, std::atomic<T>& var)
 {
-    var = parameter.get_value<T>();
+    var = get_value<T>(parameter);
 }
 
 template<typename T>
@@ -52,12 +86,14 @@ bool assign_check(const rclcpp::Parameter& parameter, const std::string& name, T
 }
 
 rcl_interfaces::msg::ParameterDescriptor
-descr(const std::string& description, const bool& read_only = false)
+descr(const std::string& description, const bool& read_only = false, const bool& dynamic_typing = false)
 {
     rcl_interfaces::msg::ParameterDescriptor descr;
 
     descr.description = description;
     descr.read_only = read_only;
+    // accept integers for floating point and boolean parameters
+    descr.dynamic_typing = dynamic_typing;
 
     return descr;
 }
@@ -185,12 +221,14 @@ AprilTagNode::AprilTagNode(const rclcpp::NodeOptions& options)
     }
 
     // detector parameters in "detector" namespace
+    // the dynamically typed parameters are declared via 'rclcpp::ParameterValue'
+    // since the typed overload would reject the integer representation again
     declare_parameter("detector.threads", td->nthreads, descr("number of threads"));
-    declare_parameter("detector.decimate", td->quad_decimate, descr("decimate resolution for quad detection"));
-    declare_parameter("detector.blur", td->quad_sigma, descr("sigma of Gaussian blur for quad detection"));
-    declare_parameter("detector.refine", td->refine_edges, descr("snap to strong gradients"));
-    declare_parameter("detector.sharpening", td->decode_sharpening, descr("sharpening of decoded images"));
-    declare_parameter("detector.debug", td->debug, descr("write additional debugging images to working directory"));
+    declare_parameter("detector.decimate", rclcpp::ParameterValue(double(td->quad_decimate)), descr("decimate resolution for quad detection", false, true));
+    declare_parameter("detector.blur", rclcpp::ParameterValue(double(td->quad_sigma)), descr("sigma of Gaussian blur for quad detection", false, true));
+    declare_parameter("detector.refine", rclcpp::ParameterValue(td->refine_edges), descr("snap to strong gradients", false, true));
+    declare_parameter("detector.sharpening", rclcpp::ParameterValue(td->decode_sharpening), descr("sharpening of decoded images", false, true));
+    declare_parameter("detector.debug", rclcpp::ParameterValue(td->debug), descr("write additional debugging images to working directory", false, true));
 
     declare_parameter("max_hamming", 0, descr("reject detections with more corrected bits than allowed"));
     declare_parameter("profile", false, descr("print profiling information to stdout"));
