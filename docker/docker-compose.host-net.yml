@@ -1,0 +1,11 @@
+# Optional override: put the container on the host network so DDS can discover
+# ROS 2 nodes running outside of it.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.host-net.yml run --rm apriltag
+#
+# Note: on WSL2 the host network interface does not carry the DDS discovery
+# traffic, so nodes stop seeing each other. Use the default bridge network there.
+services:
+  apriltag:
+    network_mode: host
+    ipc: host

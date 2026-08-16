@@ -1,0 +1,39 @@
+name: apriltag-ros
+
+services:
+  apriltag:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        ROS_DISTRO: jazzy
+        USER_UID: ${USER_UID:-1000}
+        USER_GID: ${USER_GID:-1000}
+    image: apriltag_ros:jazzy
+    container_name: apriltag_ros_jazzy
+    init: true
+    stdin_open: true
+    tty: true
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+      DISPLAY: ${DISPLAY:-}
+      QT_X11_NO_MITSHM: "1"
+    volumes:
+      # Sources are edited on the host and built inside the container.
+      - ..:/ws/src/apriltag_ros
+      # Keep colcon artifacts in named volumes so they never touch the host
+      # checkout and survive container restarts.
+      - colcon-build:/ws/build
+      - colcon-install:/ws/install
+      - colcon-log:/ws/log
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    # Uncomment to expose a camera device to the container.
+    # devices:
+    #   - /dev/video0:/dev/video0
+    command: bash
+
+volumes:
+  colcon-build:
+  colcon-install:
+  colcon-log:
