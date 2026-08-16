@@ -43,7 +43,7 @@ find_package(image_transport REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(Eigen3 REQUIRED NO_MODULE)
 find_package(Threads REQUIRED)
-find_package(OpenCV REQUIRED COMPONENTS core calib3d)
+find_package(OpenCV REQUIRED COMPONENTS core calib3d imgproc)
 find_package(apriltag 3.2 REQUIRED)
 
 if(cv_bridge_VERSION VERSION_GREATER_EQUAL 3.3.0)
@@ -123,6 +123,8 @@ target_link_libraries(AprilTagNode
     ${sensor_msgs_TARGETS}
     cv_bridge::cv_bridge
     image_transport::image_transport
+    opencv_calib3d
+    opencv_imgproc
     rclcpp::rclcpp
     rclcpp_components::component
     rclcpp_components::component_manager

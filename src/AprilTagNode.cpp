@@ -18,6 +18,13 @@
 #include "tag_functions.hpp"
 #include <apriltag.h>
 
+// opencv
+#include <opencv2/calib3d.hpp>
+#include <opencv2/imgproc.hpp>
+
+#include <algorithm>
+#include <set>
+
 
 #define IF(N, V) \
     if(assign_check(parameter, N, V)) continue;
@@ -55,6 +62,16 @@ descr(const std::string& description, const bool& read_only = false)
     return descr;
 }
 
+// distortion models that 'cv::initUndistortRectifyMap' can handle
+const static std::set<std::string> distortion_models{"plumb_bob", "rational_polynomial"};
+
+bool same_calibration(const sensor_msgs::msg::CameraInfo& a, const sensor_msgs::msg::CameraInfo& b)
+{
+    return a.width == b.width && a.height == b.height &&
+           a.distortion_model == b.distortion_model &&
+           a.d == b.d && a.k == b.k && a.r == b.r && a.p == b.p;
+}
+
 const static std::unordered_map<std::string, rmw_qos_profile_t> qos_profiles{
     {"default", rmw_qos_profile_default},
     {"sensor_data", rmw_qos_profile_sensor_data},
@@ -88,6 +105,15 @@ private:
     tf2_ros::TransformBroadcaster tf_broadcaster;
 
     pose_estimation_f estimate_pose = nullptr;
+
+    // undistortion of images that are not rectified
+    const bool undistort;
+    sensor_msgs::msg::CameraInfo calibration;
+    cv::Mat undistort_map1, undistort_map2;
+
+    // recompute the undistortion maps when the calibration changed,
+    // returns true if images have to be undistorted
+    bool updateUndistortMaps(const sensor_msgs::msg::CameraInfo& msg_ci);
 
     void onCamera(const sensor_msgs::msg::Image::ConstSharedPtr& msg_img, const sensor_msgs::msg::CameraInfo::ConstSharedPtr& msg_ci);
 
@@ -127,7 +153,11 @@ AprilTagNode::AprilTagNode(const rclcpp::NodeOptions& options)
 #else
         this
 #endif
-    )
+        ),
+    undistort(declare_parameter("undistort", false,
+                                descr("undistort the images with the distortion coefficients from 'camera_info' "
+                                      "instead of expecting already rectified images",
+                                      true)))
 {
     // read-only parameters
     const std::string tag_family = declare_parameter("family", "36h11", descr("tag family", true));
@@ -196,6 +226,49 @@ AprilTagNode::~AprilTagNode()
     tf_destructor(tf);
 }
 
+bool AprilTagNode::updateUndistortMaps(const sensor_msgs::msg::CameraInfo& msg_ci)
+{
+    if(same_calibration(msg_ci, calibration)) { return !undistort_map1.empty(); }
+
+    calibration = msg_ci;
+    undistort_map1.release();
+    undistort_map2.release();
+
+    // images without distortion are already rectified
+    if(std::none_of(msg_ci.d.cbegin(), msg_ci.d.cend(), [](const double c) { return c != 0; })) {
+        return false;
+    }
+
+    if(!distortion_models.count(msg_ci.distortion_model)) {
+        RCLCPP_WARN_STREAM(get_logger(), "Cannot undistort images with distortion model '" << msg_ci.distortion_model << "'.");
+        return false;
+    }
+
+    // the projection matrix 'P' defines the intrinsics of the undistorted image
+    if(!(msg_ci.p[0] && msg_ci.p[5])) {
+        RCLCPP_WARN_STREAM(get_logger(), "Cannot undistort images without a valid projection matrix 'P'.");
+        return false;
+    }
+
+    const cv::Matx33d K(msg_ci.k.data());
+    const cv::Mat D(msg_ci.d);
+    // some drivers leave the rectification matrix 'R' empty
+    const cv::Matx33d R = std::none_of(msg_ci.r.cbegin(), msg_ci.r.cend(), [](const double c) { return c != 0; })
+                              ? cv::Matx33d::eye()
+                              : cv::Matx33d(msg_ci.r.data());
+    const cv::Matx33d P(msg_ci.p[0], msg_ci.p[1], msg_ci.p[2],
+                        msg_ci.p[4], msg_ci.p[5], msg_ci.p[6],
+                        msg_ci.p[8], msg_ci.p[9], msg_ci.p[10]);
+
+    cv::initUndistortRectifyMap(K, D, R, P,
+                                cv::Size(int(msg_ci.width), int(msg_ci.height)),
+                                CV_16SC2, undistort_map1, undistort_map2);
+
+    RCLCPP_INFO_STREAM(get_logger(), "Undistorting " << msg_ci.width << "x" << msg_ci.height << " images with distortion model '" << msg_ci.distortion_model << "'.");
+
+    return true;
+}
+
 void AprilTagNode::onCamera(const sensor_msgs::msg::Image::ConstSharedPtr& msg_img,
                             const sensor_msgs::msg::CameraInfo::ConstSharedPtr& msg_ci)
 {
@@ -211,7 +284,14 @@ void AprilTagNode::onCamera(const sensor_msgs::msg::Image::ConstSharedPtr& msg_i
     }
 
     // convert to 8bit monochrome image
-    const cv::Mat img_uint8 = cv_bridge::toCvShare(msg_img, "mono8")->image;
+    cv::Mat img_uint8 = cv_bridge::toCvShare(msg_img, "mono8")->image;
+
+    // undistort images that are not rectified yet
+    if(undistort && updateUndistortMaps(*msg_ci)) {
+        cv::Mat img_undistorted;
+        cv::remap(img_uint8, img_undistorted, undistort_map1, undistort_map2, cv::INTER_LINEAR);
+        img_uint8 = img_undistorted;
+    }
 
     image_u8_t im{img_uint8.cols, img_uint8.rows, img_uint8.cols, img_uint8.data};
 

@@ -33,6 +33,7 @@ apriltag:                 # node name
     family: 36h11         # tag family name: 16h5, 25h9, 36h11
     size: 1.0             # default tag edge size in meter
     profile: false        # print profiling information to stdout
+    undistort: false      # undistort the images instead of expecting rectified images
 
     # tuning of detection (defaults)
     max_hamming: 0        # maximum allowed hamming distance (corrected bits)
@@ -57,6 +58,8 @@ apriltag:                 # node name
 The `family` (string) defines the tag family for the detector and must be one of `16h5`, `25h9`, `36h11`, `Circle21h7`, `Circle49h12`, `Custom48h12`, `Standard41h12`, `Standard52h13`. `size` (float) is the tag edge size in meters, assuming square markers.
 
 Instead of publishing all tag poses, the list `tag.ids` can be used to only publish selected tag IDs. Each tag can have an associated child frame name in `tag.frames` and a tag specific size in `tag.sizes`. These lists must either have the same length as `tag.ids` or may be empty. In this case, a default frame name of the form `tag<family>:<id>` and the default tag edge size `size` will be used.
+
+The node expects rectified images. The recommended way to rectify the raw images of a camera is to run an `image_proc::RectifyNode` in front of the node, ideally composed into the same container as shown in [camera_36h11.launch.yml](launch/camera_36h11.launch.yml). If this is not possible, `undistort` (bool) makes the node undistort the images itself, using the distortion coefficients `D` from `CameraInfo` and the projection matrix `P` as the intrinsics of the undistorted image. The undistortion maps are only computed when the calibration changes. Only the `plumb_bob` and `rational_polynomial` distortion models are supported; images with any other distortion model are passed to the detector unchanged.
 
 The remaining parameters are set to the their default values from the library. See `apriltag.h` for a more detailed description of their function.
 
